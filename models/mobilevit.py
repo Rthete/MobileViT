@@ -1,8 +1,10 @@
 from typing import Optional, Tuple, Union, Dict
 import math
-from .transformer import TransformerEncoder
-from .model_config import get_config
-from .registry import register_model
+from transformer import TransformerEncoder
+from model_config import get_config
+# from .registry import register_model
+# from .adaptive_avgpool2d import AdaptiveAvgPool2d
+from layers.pooling import GlobalAvgPooling
 import mindspore.common.initializer as init
 
 import mindspore
@@ -48,7 +50,7 @@ class ConvLayer(nn.Cell):
                  groups: int = 1,
                  norm: Optional[nn.Cell] = nn.BatchNorm2d,
                  activation: Optional[nn.Cell] = nn.SiLU,
-                 has_bias: Optional[bool] = None) -> None:
+                 has_bias: Optional[bool] = False) -> None:
         super().__init__()
 
         if pad_mode == "pad":
@@ -304,7 +306,9 @@ class MobileViTBlock(nn.Cell):
             in_channels=in_channels,
             out_channels=transformer_dim,
             kernel_size=1,
-            stride=1
+            stride=1,
+            norm=None,
+            activation=None
         )
 
         conv_1x1_out = ConvLayer(
@@ -342,7 +346,7 @@ class MobileViTBlock(nn.Cell):
             for _ in range(n_transformer_blocks)
         ]
         self.global_rep.append(nn.LayerNorm((transformer_dim,)))
-        self.global_rep = nn.SequentialCell(self.global_rep)
+        self.global_rep = nn.CellList(self.global_rep)
 
         self.conv_proj = conv_1x1_out
         self.fusion = conv_3x3_out
@@ -488,7 +492,8 @@ class MobileViT(nn.Cell):
         )
 
         classifier = []
-        classifier.append(nn.AdaptiveAvgPool2d(1))
+        # classifier.append(AdaptiveAvgPool2d(output_size=(1,1)))
+        classifier.append(GlobalAvgPooling())
         classifier.append(nn.Flatten())
         if 0.0 < model_cfg["cls_dropout"] < 1.0:
             classifier.append(nn.Dropout(keep_prob=1 - model_cfg["cls_dropout"]))
@@ -599,7 +604,7 @@ class MobileViT(nn.Cell):
         return x
 
 
-@register_model
+# @register_model
 def mobile_vit_xx_small(pretrained: bool = False, num_classes: int = 1000, in_channels=3, **kwargs) -> MobileViT:
     # pretrain weight link
     # https://docs-assets.developer.apple.com/ml-research/models/cvnets/classification/mobilevit_xxs.pt
@@ -608,7 +613,7 @@ def mobile_vit_xx_small(pretrained: bool = False, num_classes: int = 1000, in_ch
     return m
 
 
-@register_model
+# @register_model
 def mobile_vit_x_small(pretrained: bool = False, num_classes: int = 1000, in_channels=3, **kwargs) -> MobileViT:
     # pretrain weight link
     # https://docs-assets.developer.apple.com/ml-research/models/cvnets/classification/mobilevit_xs.pt
@@ -617,7 +622,7 @@ def mobile_vit_x_small(pretrained: bool = False, num_classes: int = 1000, in_cha
     return m
 
 
-@register_model
+# @register_model
 def mobile_vit_small(pretrained: bool = False, num_classes: int = 1000, in_channels=3, **kwargs) -> MobileViT:
     # pretrain weight link
     # https://docs-assets.developer.apple.com/ml-research/models/cvnets/classification/mobilevit_s.pt
