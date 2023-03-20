@@ -5,8 +5,71 @@ import mindspore.nn as nn
 from mindspore import Tensor
 from mindspore import ops
 
-
 class MultiHeadAttention(nn.Cell):
+    """
+    This layer applies a multi-head self- or cross-attention as described in
+    `Attention is all you need <https://arxiv.org/abs/1706.03762>`_ paper
+
+    Args:
+        embed_dim (int): :math:`C_{in}` from an expected input of size :math:`(N, P, C_{in})`
+        num_heads (int): Number of heads in multi-head attention
+        attn_dropout (float): Attention dropout. Default: 0.0
+        bias (bool): Use bias or not. Default: ``True``
+
+    Shape:
+        - Input: :math:`(N, P, C_{in})` where :math:`N` is batch size, :math:`P` is number of patches,
+        and :math:`C_{in}` is input embedding dim
+        - Output: same shape as the input
+
+    """
+
+    def __init__(
+        self,
+        embed_dim: int,
+        num_heads: int,
+        attn_dropout: float = 0.0,
+        bias: bool = True,
+        *args,
+        **kwargs
+    ) -> None:
+        super().__init__()
+        if embed_dim % num_heads != 0:
+            raise ValueError(
+                "Embedding dim must be divisible by number of heads in {}. Got: embed_dim={} and num_heads={}".format(
+                    self.__class__.__name__, embed_dim, num_heads
+                )
+            )
+
+        self.qkv_proj = nn.Dense(in_channels=embed_dim, out_channels=embed_dim * 3, has_bias=bias)
+
+        self.attn_dropout = nn.Dropout(keep_prob=1.0 - attn_dropout)
+        self.out_proj = nn.Dense(in_channels=embed_dim, out_channels=embed_dim, has_bias=bias)
+
+        self.head_dim = embed_dim // num_heads
+        self.scaling = self.head_dim ** -0.5
+        self.softmax = nn.Softmax(axis=-1)
+        self.num_heads = num_heads
+        self.embed_dim = embed_dim
+        self.batch_matmul = ops.BatchMatMul()
+
+    def construct(self, x: Tensor) -> Tensor:
+        B, N, C = x.shape
+        qkv = self.qkv_proj(x)
+        qkv = ops.reshape(qkv, (B, N, 3, self.num_heads, C // self.num_heads))
+        qkv = ops.transpose(qkv, (2, 0, 3, 1, 4))
+        q, k, v = qkv[0], qkv[1], qkv[2]
+
+        attn = ops.BatchMatMul(transpose_b=True)(q, k) * self.scaling
+        attn = nn.Softmax(axis=-1)(attn)
+        attn = self.attn_dropout(attn)
+
+        x = ops.transpose(ops.BatchMatMul()(attn, v), (0, 2, 1, 3))
+        x = ops.reshape(x, (B, N, C))
+        x = self.out_proj(x)
+        # x = self.proj_drop(x)
+        return x
+
+class MultiHeadAttention1(nn.Cell):
     """
     This layer applies a multi-head self- or cross-attention as described in
     `Attention is all you need <https://arxiv.org/abs/1706.03762>`_ paper

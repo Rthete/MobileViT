@@ -53,7 +53,7 @@ re_prob: 1.0
 # ema_decay: 0.9995
 
 # model config
-model: 'mobile_vit_xx_small'
+model: 'mobile_vit_small'
 num_classes: 1000
 pretrained: False
 ckpt_path: ''
@@ -71,12 +71,13 @@ label_smoothing: 0.1
 scheduler: 'warmup_cosine_decay'
 min_lr: 0.000002
 lr: 0.002
-warmup_epochs: 40
-decay_epochs: 410
+warmup_epochs: 20
+decay_epochs: 430
 
 # optimizer config
 opt: 'adamw'
 filter_bias_and_bn: True
+# filter_bias_and_bn: False
 momentum: 0.9
 weight_decay: 0.01
 use_nesterov: False

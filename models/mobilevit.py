@@ -3,6 +3,7 @@ import math
 from .transformer import TransformerEncoder
 from .model_config import get_config
 from .registry import register_model
+from .layers.pooling import GlobalAvgPooling
 import mindspore.common.initializer as init
 
 import mindspore
@@ -10,7 +11,11 @@ from mindspore import nn
 from mindspore import ops
 from mindspore import Tensor
 
-
+__all__ = [
+    "mobile_vit_xx_small",
+    "mobile_vit_x_small",
+    "mobile_vit_small",
+]
 
 def make_divisible(
     v: Union[float, int],
@@ -48,7 +53,7 @@ class ConvLayer(nn.Cell):
                  groups: int = 1,
                  norm: Optional[nn.Cell] = nn.BatchNorm2d,
                  activation: Optional[nn.Cell] = nn.SiLU,
-                 has_bias: Optional[bool] = None) -> None:
+                 has_bias: Optional[bool] = False) -> None:
         super().__init__()
 
         if pad_mode == "pad":
@@ -74,7 +79,7 @@ class ConvLayer(nn.Cell):
         ]
 
         if norm:
-            layers.append(norm(out_channels))
+            layers.append(norm(out_channels, momentum=0.9))
         if activation:
             layers.append(activation())
 
@@ -342,7 +347,7 @@ class MobileViTBlock(nn.Cell):
             for _ in range(n_transformer_blocks)
         ]
         self.global_rep.append(nn.LayerNorm((transformer_dim,)))
-        self.global_rep = nn.SequentialCell(self.global_rep)
+        self.global_rep = nn.CellList(self.global_rep)
 
         self.conv_proj = conv_1x1_out
         self.fusion = conv_3x3_out
@@ -488,7 +493,8 @@ class MobileViT(nn.Cell):
         )
 
         classifier = []
-        classifier.append(nn.AdaptiveAvgPool2d(1))
+        # classifier.append(AdaptiveAvgPool2d(output_size=(1,1)))
+        classifier.append(GlobalAvgPooling())
         classifier.append(nn.Flatten())
         if 0.0 < model_cfg["cls_dropout"] < 1.0:
             classifier.append(nn.Dropout(keep_prob=1 - model_cfg["cls_dropout"]))
@@ -497,6 +503,7 @@ class MobileViT(nn.Cell):
 
         # weight init
         # self.apply(self.init_parameters)
+        self._initialize_weights()
 
     def _make_layer(self, input_channel, cfg: Dict) -> Tuple[nn.SequentialCell, int]:
         # # print("makelayer")
@@ -571,17 +578,26 @@ class MobileViT(nn.Cell):
 
         return nn.SequentialCell(block), input_channel
 
-    @staticmethod
     def _initialize_weights(self) -> None:
         """Initialize weights for cells."""
         for _, cell in self.cells_and_names():
             if isinstance(cell, nn.Dense):
-                cell.weight.set_data(init.initializer(init.TruncatedNormal(sigma=.02), cell.weight.data.shape))
+                if cell.weight is not None:
+                    cell.weight.set_data(init.initializer(init.TruncatedNormal(sigma=.02), cell.weight.shape, cell.weight.dtype))
                 if cell.bias is not None:
-                    cell.bias.set_data(init.initializer(init.Constant(0), cell.bias.shape))
-            elif isinstance(cell, nn.LayerNorm):
-                cell.gamma.set_data(init.initializer(init.Constant(1), cell.gamma.shape))
-                cell.beta.set_data(init.initializer(init.Constant(0), cell.beta.shape))
+                    cell.bias.set_data(init.initializer('zeros', cell.bias.shape, cell.bias.dtype))
+            elif isinstance(cell, (nn.LayerNorm, nn.BatchNorm2d)):
+                if cell.gamma is not None:
+                    cell.gamma.set_data(init.initializer('ones', cell.gamma.shape, cell.gamma.dtype))
+                if cell.beta is not None:
+                    cell.beta.set_data(init.initializer('zeros', cell.beta.shape, cell.beta.dtype))
+            elif isinstance(cell, nn.Conv2d):
+                if cell.weight is not None:
+                    cell.weight.set_data(
+                        init.initializer(init.HeNormal(mode='fan_out', nonlinearity='leaky_relu'),
+                                        cell.weight.shape, cell.weight.dtype))
+                if cell.bias is not None:
+                    cell.bias.set_data(init.initializer('zeros', cell.bias.shape, cell.bias.dtype))
 
     def construct(self, x: Tensor) -> Tensor:
         # print(x.shape)

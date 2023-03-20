@@ -44,19 +44,19 @@ crop_pct: 0.875
 color_jitter: [0.4, 0.4, 0.4]
 re_prob: 1.0
 
-# auto_augment: 'randaug-m9-mstd0.5'
+# re_value: 'random'
+
+# auto_augment: 'autoaug-mstd0.5'
 # mixup: 0.5
 # cutmix: 1.0
 # cutmix_prob: 1.0
 
-# ema: True
-# ema_decay: 0.9995
-
 # model config
-model: 'mobile_vit_xx_small'
+model: 'mobile_vit_x_small'
 num_classes: 1000
 pretrained: False
 ckpt_path: ''
+# ckpt_path: 'ckpt/mobile_vit_small_best.ckpt'
 keep_checkpoint_max: 10
 ckpt_save_dir: './ckpt/'
 epoch_size: 450
@@ -71,8 +71,8 @@ label_smoothing: 0.1
 scheduler: 'warmup_cosine_decay'
 min_lr: 0.000002
 lr: 0.002
-warmup_epochs: 40
-decay_epochs: 410
+warmup_epochs: 20
+decay_epochs: 430
 
 # optimizer config
 opt: 'adamw'
